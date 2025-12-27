@@ -46,6 +46,14 @@ const DashboardLayout = () => {
   const navigate = useNavigate();
   const { user, profile, role, signOut, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { pathname } = useLocation();
+
+
+  useEffect(() => {
+    window.scrollTo({top: 0, behavior: "smooth"});
+
+  }, [pathname])
+
 
   useEffect(() => {
     if (!isLoading && !user) {

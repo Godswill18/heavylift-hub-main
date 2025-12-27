@@ -1,4 +1,4 @@
-import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,7 +10,7 @@ import {
   UserPlus,
   ChevronDown
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,13 @@ const PublicLayout = () => {
     if (role === 'owner') return '/owner';
     return '/contractor';
   };
+
+    const { pathname } = useLocation();
+  
+    useEffect(() => {
+      window.scrollTo({top: 0, behavior: "smooth"});
+  
+    }, [pathname])
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
