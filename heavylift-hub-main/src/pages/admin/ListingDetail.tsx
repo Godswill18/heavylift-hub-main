@@ -332,12 +332,12 @@ const AdminListingDetail = () => {
           </CardContent>
         </Card>
 
-        {listing.images && listing.images.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Images ({listing.images.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
+        <Card>
+          <CardHeader>
+            <CardTitle>Images ({listing.images?.length || 0})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {listing.images && listing.images.length > 0 ? (
               <div className="grid grid-cols-2 gap-2">
                 {listing.images.map((img, idx) => (
                   <img 
@@ -345,12 +345,17 @@ const AdminListingDetail = () => {
                     src={img} 
                     alt={`${listing.title} ${idx + 1}`}
                     className="w-full h-32 object-cover rounded-lg"
+                    onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
                   />
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            ) : (
+              <div className="flex items-center justify-center h-32 bg-muted rounded-lg">
+                <p className="text-muted-foreground">No images uploaded</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

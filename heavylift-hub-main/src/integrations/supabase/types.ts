@@ -44,6 +44,50 @@ export type Database = {
         }
         Relationships: []
       }
+      booking_status_logs: {
+        Row: {
+          action_type: string
+          booking_id: string
+          created_at: string
+          id: string
+          new_status: string
+          notes: string | null
+          performed_by: string
+          performed_by_role: string
+          previous_status: string | null
+        }
+        Insert: {
+          action_type: string
+          booking_id: string
+          created_at?: string
+          id?: string
+          new_status: string
+          notes?: string | null
+          performed_by: string
+          performed_by_role: string
+          previous_status?: string | null
+        }
+        Update: {
+          action_type?: string
+          booking_id?: string
+          created_at?: string
+          id?: string
+          new_status?: string
+          notes?: string | null
+          performed_by?: string
+          performed_by_role?: string
+          previous_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "booking_status_logs_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bookings: {
         Row: {
           booking_number: string
@@ -148,6 +192,9 @@ export type Database = {
       disputes: {
         Row: {
           booking_id: string
+          contractor_evidence: string[] | null
+          contractor_response: string | null
+          contractor_response_at: string | null
           created_at: string
           description: string | null
           evidence: string[] | null
@@ -164,6 +211,9 @@ export type Database = {
         }
         Insert: {
           booking_id: string
+          contractor_evidence?: string[] | null
+          contractor_response?: string | null
+          contractor_response_at?: string | null
           created_at?: string
           description?: string | null
           evidence?: string[] | null
@@ -180,6 +230,9 @@ export type Database = {
         }
         Update: {
           booking_id?: string
+          contractor_evidence?: string[] | null
+          contractor_response?: string | null
+          contractor_response_at?: string | null
           created_at?: string
           description?: string | null
           evidence?: string[] | null
@@ -688,6 +741,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      auto_mark_return_due: { Args: never; Returns: undefined }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -710,6 +764,8 @@ export type Database = {
         | "confirmed"
         | "delivering"
         | "on_hire"
+        | "return_due"
+        | "returned"
         | "completed"
         | "cancelled"
         | "disputed"
@@ -865,6 +921,8 @@ export const Constants = {
         "confirmed",
         "delivering",
         "on_hire",
+        "return_due",
+        "returned",
         "completed",
         "cancelled",
         "disputed",

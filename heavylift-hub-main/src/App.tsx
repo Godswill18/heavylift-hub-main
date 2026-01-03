@@ -28,13 +28,16 @@ import ContractorDashboard from "@/pages/contractor/Dashboard";
 import ContractorBookings from "@/pages/contractor/Bookings";
 import ContractorBookingConfirmation from "@/pages/contractor/BookingConfirmation";
 import ContractorWallet from "@/pages/contractor/Wallet";
+import ContractorDisputes from "@/pages/contractor/Disputes";
 
 // Owner Pages
 import OwnerDashboard from "@/pages/owner/Dashboard";
 import OwnerEquipment from "@/pages/owner/Equipment";
 import OwnerEquipmentNew from "@/pages/owner/EquipmentNew";
+import OwnerEquipmentEdit from "@/pages/owner/EquipmentEdit";
 import OwnerRequests from "@/pages/owner/Requests";
 import OwnerPayouts from "@/pages/owner/Payouts";
+import OwnerDisputes from "@/pages/owner/Disputes";
 
 // Admin Pages
 import AdminDashboard from "@/pages/admin/Dashboard";
@@ -92,6 +95,7 @@ const App = () => (
               <Route path="/contractor/bookings" element={<ContractorBookings />} />
               <Route path="/contractor/bookings/confirmation/:id" element={<ContractorBookingConfirmation />} />
               <Route path="/contractor/bookings/:id" element={<ContractorBookings />} />
+              <Route path="/contractor/disputes" element={<ContractorDisputes />} />
               <Route path="/contractor/wallet" element={<ContractorWallet />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
@@ -101,9 +105,10 @@ const App = () => (
               <Route path="/owner" element={<OwnerDashboard />} />
               <Route path="/owner/equipment" element={<OwnerEquipment />} />
               <Route path="/owner/equipment/new" element={<OwnerEquipmentNew />} />
-              <Route path="/owner/equipment/:id/edit" element={<OwnerEquipmentNew />} />
+              <Route path="/owner/equipment/:id/edit" element={<OwnerEquipmentEdit />} />
               <Route path="/owner/requests" element={<OwnerRequests />} />
               <Route path="/owner/payouts" element={<OwnerPayouts />} />
+              <Route path="/owner/disputes" element={<OwnerDisputes />} />
             </Route>
             
             {/* Admin Routes */}

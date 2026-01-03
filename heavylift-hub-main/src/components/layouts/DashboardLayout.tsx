@@ -33,6 +33,7 @@ import {
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import Logo from '@/assets/LOGO_PNG.png';
 
 interface NavItem {
   label: string;
@@ -46,14 +47,6 @@ const DashboardLayout = () => {
   const navigate = useNavigate();
   const { user, profile, role, signOut, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { pathname } = useLocation();
-
-
-  useEffect(() => {
-    window.scrollTo({top: 0, behavior: "smooth"});
-
-  }, [pathname])
-
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -91,6 +84,7 @@ const DashboardLayout = () => {
         { label: 'My Equipment', href: '/owner/equipment', icon: Package },
         { label: 'Add Equipment', href: '/owner/equipment/new', icon: Plus },
         { label: 'Booking Requests', href: '/owner/requests', icon: Calendar, badge: 3 },
+        { label: 'Disputes', href: '/owner/disputes', icon: AlertTriangle },
         { label: 'Payouts', href: '/owner/payouts', icon: Wallet },
       ];
     }
@@ -100,6 +94,7 @@ const DashboardLayout = () => {
       { label: 'Dashboard', href: '/contractor', icon: LayoutDashboard },
       { label: 'Browse Equipment', href: '/contractor/search', icon: Search },
       { label: 'My Bookings', href: '/contractor/bookings', icon: Calendar },
+      { label: 'Disputes', href: '/contractor/disputes', icon: AlertTriangle },
       { label: 'Wallet', href: '/contractor/wallet', icon: Wallet },
     ];
   };
@@ -141,10 +136,7 @@ const DashboardLayout = () => {
         {/* Logo */}
         <div className="flex items-center gap-2 h-16 px-6 border-b border-sidebar-border">
           <Link to="/" className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary">
-              <Construction className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-bold text-sidebar-foreground">MachRent</span>
+            <img src={Logo} alt="MachRent" className="h-32" />
           </Link>
         </div>
 
@@ -163,11 +155,11 @@ const DashboardLayout = () => {
             >
               <item.icon className="h-5 w-5" />
               <span className="flex-1">{item.label}</span>
-              {item.badge && (
+              {/* {item.badge && (
                 <Badge variant="destructive" className="text-xs px-1.5 py-0.5 min-w-[20px] justify-center">
                   {item.badge}
                 </Badge>
-              )}
+              )} */}
             </Link>
           ))}
         </nav>
@@ -201,10 +193,7 @@ const DashboardLayout = () => {
         {/* Close button */}
         <div className="flex items-center justify-between h-16 px-6 border-b border-sidebar-border">
           <Link to="/" className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary">
-              <Construction className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-bold text-sidebar-foreground">MachRent</span>
+            <img src={Logo} alt="MachRent" className="h-32" />
           </Link>
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(false)}>
             <X className="h-5 w-5" />

@@ -2,14 +2,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatNaira } from '@/types';
-import { ArrowLeft, Calendar, MapPin, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, AlertTriangle, Clock, History } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { BookingProgressStepper } from '@/components/bookings/BookingProgressStepper';
+import { type BookingStatus } from '@/lib/bookingLifecycle';
 
 interface BookingDetail {
   id: string;
@@ -62,6 +64,8 @@ const statusColors: Record<string, string> = {
   confirmed: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
   delivering: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   on_hire: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+  return_due: 'bg-rose-500/10 text-rose-600 border-rose-500/20',
+  returned: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20',
   completed: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
   cancelled: 'bg-red-500/10 text-red-600 border-red-500/20',
   disputed: 'bg-red-500/10 text-red-600 border-red-500/20',
@@ -70,21 +74,43 @@ const statusColors: Record<string, string> = {
 
 const allStatuses = [
   'requested', 'accepted', 'rejected', 'pending_payment', 'confirmed', 
-  'delivering', 'on_hire', 'completed', 'cancelled', 'disputed'
+  'delivering', 'on_hire', 'return_due', 'returned', 'completed', 'cancelled', 'disputed'
 ];
+
+interface StatusLog {
+  id: string;
+  new_status: string;
+  previous_status: string | null;
+  action_type: string;
+  performed_by_role: string;
+  notes: string | null;
+  created_at: string;
+}
 
 const AdminBookingDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [booking, setBooking] = useState<BookingDetail | null>(null);
+  const [statusLogs, setStatusLogs] = useState<StatusLog[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     if (id) {
       fetchBooking();
+      fetchStatusLogs();
     }
   }, [id]);
+
+  const fetchStatusLogs = async () => {
+    if (!id) return;
+    const { data } = await supabase
+      .from('booking_status_logs')
+      .select('*')
+      .eq('booking_id', id)
+      .order('created_at', { ascending: true });
+    setStatusLogs(data || []);
+  };
 
   const fetchBooking = async () => {
     try {
@@ -252,6 +278,35 @@ const AdminBookingDetail = () => {
           </Button>
         </div>
       )}
+
+      {/* Return Due Alert */}
+      {booking.status === 'return_due' && (
+        <div className="flex items-center gap-2 p-4 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+          <Clock className="h-5 w-5 text-rose-600" />
+          <div className="flex-1">
+            <span className="text-rose-600 font-medium">Equipment Return Overdue</span>
+            <p className="text-sm text-rose-600/80">
+              Rental period ended {differenceInDays(new Date(), new Date(booking.end_date))} days ago
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Progress Stepper */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Booking Progress
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BookingProgressStepper 
+            currentStatus={booking.status as BookingStatus} 
+            statusLogs={statusLogs}
+          />
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -440,6 +495,55 @@ const AdminBookingDetail = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Audit Trail */}
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Status Audit Trail
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {statusLogs.length === 0 ? (
+              <p className="text-muted-foreground text-sm">No status changes logged yet</p>
+            ) : (
+              <div className="space-y-3">
+                {statusLogs.map((log) => (
+                  <div key={log.id} className="flex items-start gap-3 text-sm">
+                    <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className={statusColors[log.new_status] || ''}>
+                          {log.new_status.replace(/_/g, ' ')}
+                        </Badge>
+                        {log.previous_status && (
+                          <span className="text-muted-foreground text-xs">
+                            from {log.previous_status.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                        <span className="capitalize">{log.performed_by_role}</span>
+                        <span>•</span>
+                        <span>{format(new Date(log.created_at), 'MMM d, yyyy h:mm a')}</span>
+                        {log.action_type === 'auto_transition' && (
+                          <>
+                            <span>•</span>
+                            <Badge variant="secondary" className="text-xs">Auto</Badge>
+                          </>
+                        )}
+                      </div>
+                      {log.notes && (
+                        <p className="text-xs text-muted-foreground mt-1 italic">{log.notes}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

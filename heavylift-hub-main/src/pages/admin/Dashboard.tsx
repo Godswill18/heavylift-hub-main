@@ -73,7 +73,7 @@ const AdminDashboard = () => {
         .select('status, total_amount, platform_fee, created_at');
       
       const activeBookings = bookings?.filter(b => 
-        ['on_hire', 'delivering', 'confirmed'].includes(b.status || '')
+        ['on_hire', 'return_due', 'delivering', 'confirmed'].includes(b.status || '')
       ).length || 0;
       const pendingPayments = bookings?.filter(b => b.status === 'pending_payment').length || 0;
       

@@ -9,7 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { formatNaira } from '@/types';
-import { Calendar, MapPin, ChevronRight, Package, CreditCard, User, Clock, FileText, X, Star } from 'lucide-react';
+import { Calendar, MapPin, ChevronRight, Package, CreditCard, User, Clock, FileText, X, Star, CheckCircle, Banknote } from 'lucide-react';
 import { PageTransition, StaggerContainer, StaggerItem, ScaleOnHover } from '@/components/ui/animated-container';
 import { ListItemSkeleton } from '@/components/ui/loading-skeleton';
 import { NoBookings } from '@/components/ui/empty-state';
@@ -20,11 +20,28 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ReviewForm } from '@/components/reviews/ReviewForm';
+import { BookingProgressStepper } from '@/components/bookings/BookingProgressStepper';
+import { useBookingStatusLog } from '@/hooks/useBookingStatusLog';
+import { 
+  STATUS_COLORS, 
+  PAYMENT_STATUS_COLORS, 
+  getPaymentStatusLabel,
+  type BookingStatus 
+} from '@/lib/bookingLifecycle';
+
+interface StatusLog {
+  id: string;
+  new_status: string;
+  action_type: string;
+  performed_by_role: string;
+  notes: string | null;
+  created_at: string;
+}
 
 interface Booking {
   id: string;
   booking_number: string;
-  status: string;
+  status: BookingStatus;
   total_amount: number;
   rental_amount: number;
   platform_fee: number;
@@ -55,32 +72,26 @@ interface Booking {
   } | null;
 }
 
-const statusColors: Record<string, string> = {
-  requested: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
-  accepted: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  pending_payment: 'bg-orange-500/10 text-orange-600 border-orange-500/20',
-  confirmed: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  delivering: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-  on_hire: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-  completed: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
-  cancelled: 'bg-red-500/10 text-red-600 border-red-500/20',
-  disputed: 'bg-red-500/10 text-red-600 border-red-500/20',
-  rejected: 'bg-red-500/10 text-red-600 border-red-500/20',
-};
-
 const ContractorBookings = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { logStatusChange, fetchStatusLogs } = useBookingStatusLog();
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [statusLogs, setStatusLogs] = useState<StatusLog[]>([]);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [reviewedBookings, setReviewedBookings] = useState<Set<string>>(new Set());
+  const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [isMarkingPaid, setIsMarkingPaid] = useState(false);
+  const [paymentReference, setPaymentReference] = useState('');
 
   useEffect(() => {
     if (user) {
@@ -89,11 +100,23 @@ const ContractorBookings = () => {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (selectedBooking) {
+      loadStatusLogs(selectedBooking.id);
+    }
+  }, [selectedBooking?.id]);
+
+  const loadStatusLogs = async (bookingId: string) => {
+    const { data } = await fetchStatusLogs(bookingId);
+    if (data) {
+      setStatusLogs(data as StatusLog[]);
+    }
+  };
+
   const fetchBookings = async () => {
     if (!user) return;
 
     try {
-      // Fetch bookings without equipment join first to avoid RLS issues
       const { data: bookingsData, error: bookingsError } = await supabase
         .from('bookings')
         .select(`
@@ -187,17 +210,75 @@ const ContractorBookings = () => {
     return booking.status === 'completed' && !hasReviewed(booking.id);
   };
 
+  const canMarkAsPaid = (booking: Booking) => {
+    return ['accepted', 'pending_payment'].includes(booking.status) && 
+           (booking.payment_status === 'pending' || !booking.payment_status);
+  };
+
   const filteredBookings = activeTab === 'all' 
     ? bookings 
     : bookings.filter(b => {
-        if (activeTab === 'active') return ['on_hire', 'delivering'].includes(b.status);
+        if (activeTab === 'active') return ['on_hire', 'return_due', 'delivering', 'confirmed'].includes(b.status);
         if (activeTab === 'pending') return ['requested', 'accepted', 'pending_payment'].includes(b.status);
         return b.status === activeTab;
       });
 
   const handleViewDetails = (booking: Booking) => {
     setSelectedBooking(booking);
+    setStatusLogs([]);
     setIsDetailOpen(true);
+  };
+
+  const handleMarkAsPaid = async () => {
+    if (!selectedBooking) return;
+    
+    setIsMarkingPaid(true);
+    try {
+      const previousStatus = selectedBooking.status;
+      const previousPaymentStatus = selectedBooking.payment_status;
+      
+      const { error } = await supabase
+        .from('bookings')
+        .update({ 
+          payment_status: 'awaiting_verification',
+          status: 'pending_payment'
+        })
+        .eq('id', selectedBooking.id);
+
+      if (error) throw error;
+
+      // Log the status change
+      await logStatusChange({
+        bookingId: selectedBooking.id,
+        previousStatus: previousPaymentStatus,
+        newStatus: 'awaiting_verification',
+        actionType: 'payment_update',
+        role: 'contractor',
+        notes: paymentReference ? `Payment reference: ${paymentReference}` : 'Payment marked as made by contractor',
+      });
+
+      setBookings(prev => prev.map(b => 
+        b.id === selectedBooking.id 
+          ? { ...b, payment_status: 'awaiting_verification', status: 'pending_payment' as BookingStatus } 
+          : b
+      ));
+      
+      setSelectedBooking(prev => prev ? { 
+        ...prev, 
+        payment_status: 'awaiting_verification',
+        status: 'pending_payment' as BookingStatus
+      } : null);
+      
+      toast.success('Payment marked as made. Awaiting owner verification.');
+      setIsPaymentDialogOpen(false);
+      setPaymentReference('');
+      loadStatusLogs(selectedBooking.id);
+    } catch (error) {
+      console.error('Error marking payment:', error);
+      toast.error('Failed to update payment status');
+    } finally {
+      setIsMarkingPaid(false);
+    }
   };
 
   const handleCancelBooking = async () => {
@@ -205,6 +286,8 @@ const ContractorBookings = () => {
     
     setIsCancelling(true);
     try {
+      const previousStatus = selectedBooking.status;
+      
       const { error } = await supabase
         .from('bookings')
         .update({ 
@@ -216,8 +299,18 @@ const ContractorBookings = () => {
 
       if (error) throw error;
 
+      // Log the cancellation
+      await logStatusChange({
+        bookingId: selectedBooking.id,
+        previousStatus,
+        newStatus: 'cancelled',
+        actionType: 'cancellation',
+        role: 'contractor',
+        notes: cancelReason || 'Cancelled by contractor',
+      });
+
       setBookings(prev => prev.map(b => 
-        b.id === selectedBooking.id ? { ...b, status: 'cancelled' } : b
+        b.id === selectedBooking.id ? { ...b, status: 'cancelled' as BookingStatus } : b
       ));
       
       toast.success('Booking cancelled successfully');
@@ -234,6 +327,49 @@ const ContractorBookings = () => {
 
   const canCancelBooking = (status: string) => {
     return ['requested', 'accepted', 'pending_payment'].includes(status);
+  };
+
+  const canCompleteBooking = (status: string) => {
+    return status === 'on_hire';
+  };
+
+  const handleCompleteBooking = async () => {
+    if (!selectedBooking) return;
+    
+    setIsCompleting(true);
+    try {
+      const previousStatus = selectedBooking.status;
+      
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'returned' })
+        .eq('id', selectedBooking.id);
+
+      if (error) throw error;
+
+      // Log the status change
+      await logStatusChange({
+        bookingId: selectedBooking.id,
+        previousStatus,
+        newStatus: 'returned',
+        actionType: 'status_change',
+        role: 'contractor',
+        notes: 'Equipment marked as returned by contractor',
+      });
+
+      setBookings(prev => prev.map(b => 
+        b.id === selectedBooking.id ? { ...b, status: 'returned' as BookingStatus } : b
+      ));
+      
+      toast.success('Equipment marked as returned. Waiting for owner confirmation.');
+      setIsCompleteDialogOpen(false);
+      setIsDetailOpen(false);
+    } catch (error) {
+      console.error('Error completing booking:', error);
+      toast.error('Failed to complete booking');
+    } finally {
+      setIsCompleting(false);
+    }
   };
 
   return (
@@ -255,7 +391,7 @@ const ContractorBookings = () => {
           <TabsList>
             <TabsTrigger value="all">All ({bookings.length})</TabsTrigger>
             <TabsTrigger value="active">
-              Active ({bookings.filter(b => ['on_hire', 'delivering'].includes(b.status)).length})
+              Active ({bookings.filter(b => ['on_hire', 'return_due', 'delivering', 'confirmed'].includes(b.status)).length})
             </TabsTrigger>
             <TabsTrigger value="pending">
               Pending ({bookings.filter(b => ['requested', 'accepted', 'pending_payment'].includes(b.status)).length})
@@ -284,11 +420,16 @@ const ContractorBookings = () => {
                       <CardContent className="p-6">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-2">
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
                               <h3 className="font-semibold">{booking.equipment?.title || 'Equipment'}</h3>
-                              <Badge className={statusColors[booking.status] || statusColors.requested}>
+                              <Badge className={STATUS_COLORS[booking.status] || STATUS_COLORS.requested}>
                                 {booking.status.replace('_', ' ')}
                               </Badge>
+                              {booking.payment_status && booking.payment_status !== 'pending' && (
+                                <Badge variant="outline" className={PAYMENT_STATUS_COLORS[booking.payment_status] || ''}>
+                                  {getPaymentStatusLabel(booking.payment_status)}
+                                </Badge>
+                              )}
                             </div>
                             <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                               <span className="flex items-center gap-1">
@@ -302,14 +443,31 @@ const ContractorBookings = () => {
                             </div>
                             <p className="text-xs text-muted-foreground mt-2">#{booking.booking_number}</p>
                           </div>
-                          <Button 
-                            variant="outline" 
-                            className="gap-2 group"
-                            onClick={() => handleViewDetails(booking)}
-                          >
-                            View Details
-                            <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                          </Button>
+                          <div className="flex gap-2">
+                            {canMarkAsPaid(booking) && (
+                              <Button 
+                                variant="default" 
+                                size="sm"
+                                className="gap-1 bg-emerald-600 hover:bg-emerald-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedBooking(booking);
+                                  setIsPaymentDialogOpen(true);
+                                }}
+                              >
+                                <Banknote className="h-4 w-4" />
+                                Mark as Paid
+                              </Button>
+                            )}
+                            <Button 
+                              variant="outline" 
+                              className="gap-2 group"
+                              onClick={() => handleViewDetails(booking)}
+                            >
+                              View Details
+                              <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                            </Button>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -329,13 +487,22 @@ const ContractorBookings = () => {
               <DialogHeader>
                 <DialogTitle className="flex items-center justify-between">
                   <span>Booking #{selectedBooking.booking_number}</span>
-                  <Badge className={statusColors[selectedBooking.status] || statusColors.requested}>
+                  <Badge className={STATUS_COLORS[selectedBooking.status] || STATUS_COLORS.requested}>
                     {selectedBooking.status.replace('_', ' ')}
                   </Badge>
                 </DialogTitle>
               </DialogHeader>
 
               <div className="space-y-6 mt-4">
+                {/* Booking Progress Stepper */}
+                <div className="bg-muted/30 rounded-lg p-4">
+                  <h4 className="font-medium mb-4 text-sm text-muted-foreground">Booking Progress</h4>
+                  <BookingProgressStepper 
+                    currentStatus={selectedBooking.status} 
+                    statusLogs={statusLogs}
+                  />
+                </div>
+
                 {/* Equipment Info */}
                 <div className="flex gap-4">
                   {selectedBooking.equipment?.images?.[0] && (
@@ -479,8 +646,11 @@ const ContractorBookings = () => {
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">Payment Status</span>
-                      <Badge variant="outline" className="text-xs">
-                        {selectedBooking.payment_status || 'pending'}
+                      <Badge 
+                        variant="outline" 
+                        className={`text-xs ${PAYMENT_STATUS_COLORS[selectedBooking.payment_status || 'pending'] || ''}`}
+                      >
+                        {getPaymentStatusLabel(selectedBooking.payment_status)}
                       </Badge>
                     </div>
                   </div>
@@ -507,6 +677,16 @@ const ContractorBookings = () => {
                       View Equipment
                     </Button>
                   )}
+                  {canMarkAsPaid(selectedBooking) && (
+                    <Button 
+                      variant="default" 
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => setIsPaymentDialogOpen(true)}
+                    >
+                      <Banknote className="h-4 w-4 mr-2" />
+                      Mark as Paid
+                    </Button>
+                  )}
                   {canLeaveReview(selectedBooking) && (
                     <Button 
                       variant="secondary" 
@@ -515,6 +695,16 @@ const ContractorBookings = () => {
                     >
                       <Star className="h-4 w-4 mr-2" />
                       Leave Review
+                    </Button>
+                  )}
+                  {canCompleteBooking(selectedBooking.status) && (
+                    <Button 
+                      variant="default" 
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => setIsCompleteDialogOpen(true)}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Mark as Returned
                     </Button>
                   )}
                   {canCancelBooking(selectedBooking.status) && (
@@ -540,6 +730,43 @@ const ContractorBookings = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Mark as Paid Dialog */}
+      <AlertDialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Payment Made</AlertDialogTitle>
+            <AlertDialogDescription>
+              Please confirm that you have made payment for this booking. The equipment owner will need to verify the payment before confirming the booking.
+              {selectedBooking && (
+                <span className="block mt-2 font-medium text-foreground">
+                  Booking #{selectedBooking.booking_number} - {formatNaira(selectedBooking.total_amount)}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Label htmlFor="payment-reference">Payment Reference (optional)</Label>
+            <Textarea
+              id="payment-reference"
+              placeholder="e.g., Bank transfer reference, receipt number..."
+              value={paymentReference}
+              onChange={(e) => setPaymentReference(e.target.value)}
+              className="mt-2"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isMarkingPaid}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleMarkAsPaid}
+              disabled={isMarkingPaid}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {isMarkingPaid ? 'Confirming...' : 'Confirm Payment Made'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Cancel Booking Confirmation Dialog */}
       <AlertDialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
@@ -573,6 +800,33 @@ const ContractorBookings = () => {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {isCancelling ? 'Cancelling...' : 'Yes, Cancel Booking'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Complete Booking Confirmation Dialog */}
+      <AlertDialog open={isCompleteDialogOpen} onOpenChange={setIsCompleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark Equipment as Returned?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirm that you have finished using the equipment and returned it to the owner. The owner will need to confirm receipt before the booking is completed.
+              {selectedBooking && (
+                <span className="block mt-2 font-medium text-foreground">
+                  Booking #{selectedBooking.booking_number} - {selectedBooking.equipment?.title}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isCompleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCompleteBooking}
+              disabled={isCompleting}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {isCompleting ? 'Completing...' : 'Yes, Mark as Returned'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

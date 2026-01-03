@@ -2,9 +2,8 @@ import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
-import { 
-  Construction, 
-  Menu, 
+import {
+  Menu,
   X,
   LogIn,
   UserPlus,
@@ -17,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import Logo from '@/assets/LOGO_PNG.png';
 
 const PublicLayout = () => {
   const navigate = useNavigate();
@@ -43,10 +43,7 @@ const PublicLayout = () => {
         <div className="container flex h-16 items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary">
-              <Construction className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold text-foreground">MachRent</span>
+            <img src={Logo} alt="MachRent" className="h-32" />
           </Link>
 
           {/* Desktop Navigation */}
@@ -208,10 +205,7 @@ const PublicLayout = () => {
             {/* Brand */}
             <div className="space-y-4">
               <Link to="/" className="flex items-center gap-2">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary">
-                  <Construction className="h-6 w-6 text-primary-foreground" />
-                </div>
-                <span className="text-xl font-bold">MachRent</span>
+                <img src={Logo} alt="MachRent" className="h-32" />
               </Link>
               <p className="text-sm text-muted-foreground">
                 Lagos' premier heavy equipment rental marketplace. Connect with verified equipment owners and contractors.

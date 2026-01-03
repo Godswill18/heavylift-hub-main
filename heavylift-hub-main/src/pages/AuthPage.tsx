@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { Construction, HardHat, Building2, ArrowLeft, Loader2 } from 'lucide-react';
 import type { UserRole } from '@/types';
+import Logo from '@/assets/LOGO_PNG.png';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -123,10 +124,11 @@ const AuthPage = () => {
         <div className="relative z-10 flex flex-col justify-between p-12 text-secondary-foreground">
           <div>
             <Link to="/" className="flex items-center gap-2 mb-8">
-              <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary">
+              {/* <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-primary">
                 <Construction className="h-7 w-7 text-primary-foreground" />
               </div>
-              <span className="text-2xl font-bold">MachRent</span>
+              <span className="text-2xl font-bold">MachRent</span> */}
+              <img src={Logo} alt="MachRent" className="h-48" />
             </Link>
           </div>
           

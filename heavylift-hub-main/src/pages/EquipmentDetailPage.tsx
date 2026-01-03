@@ -223,6 +223,12 @@ const EquipmentDetailPage = () => {
     : 0;
   const costs = calculateBookingCosts(equipment.daily_rate, days, equipment.deposit_amount);
   const specs = equipment.specifications as Record<string, string>;
+  
+  // Handle images with fallback
+  const PLACEHOLDER_IMAGE = '/placeholder.svg';
+  const images = equipment.images && equipment.images.length > 0 
+    ? equipment.images 
+    : [PLACEHOLDER_IMAGE];
 
   return (
     <div className="container py-8">
@@ -236,20 +242,21 @@ const EquipmentDetailPage = () => {
                 key={currentImageIndex}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                src={equipment.images[currentImageIndex]}
+                src={images[currentImageIndex]}
                 alt={equipment.title}
                 className="w-full h-full object-cover"
+                onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE; }}
               />
             </div>
             
             {/* Navigation */}
-            {equipment.images.length > 1 && (
+            {images.length > 1 && (
               <>
                 <Button
                   variant="ghost"
                   size="icon"
                   className="absolute left-4 top-1/2 -translate-y-1/2 bg-background/80 hover:bg-background"
-                  onClick={() => setCurrentImageIndex(i => i === 0 ? equipment.images.length - 1 : i - 1)}
+                  onClick={() => setCurrentImageIndex(i => i === 0 ? images.length - 1 : i - 1)}
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </Button>
@@ -257,7 +264,7 @@ const EquipmentDetailPage = () => {
                   variant="ghost"
                   size="icon"
                   className="absolute right-4 top-1/2 -translate-y-1/2 bg-background/80 hover:bg-background"
-                  onClick={() => setCurrentImageIndex(i => (i + 1) % equipment.images.length)}
+                  onClick={() => setCurrentImageIndex(i => (i + 1) % images.length)}
                 >
                   <ChevronRight className="h-5 w-5" />
                 </Button>
@@ -265,20 +272,27 @@ const EquipmentDetailPage = () => {
             )}
             
             {/* Thumbnails */}
-            <div className="flex gap-2 mt-4">
-              {equipment.images.map((img, idx) => (
-                <button
-                  key={idx}
-                  className={cn(
-                    "w-20 h-16 rounded-lg overflow-hidden border-2 transition-all",
-                    idx === currentImageIndex ? "border-primary" : "border-transparent opacity-70 hover:opacity-100"
-                  )}
-                  onClick={() => setCurrentImageIndex(idx)}
-                >
-                  <img src={img} alt="" className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
+            {images.length > 1 && (
+              <div className="flex gap-2 mt-4">
+                {images.map((img, idx) => (
+                  <button
+                    key={idx}
+                    className={cn(
+                      "w-20 h-16 rounded-lg overflow-hidden border-2 transition-all",
+                      idx === currentImageIndex ? "border-primary" : "border-transparent opacity-70 hover:opacity-100"
+                    )}
+                    onClick={() => setCurrentImageIndex(idx)}
+                  >
+                    <img 
+                      src={img} 
+                      alt="" 
+                      className="w-full h-full object-cover" 
+                      onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE; }}
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Actions */}
             <div className="absolute top-4 right-4 flex gap-2">

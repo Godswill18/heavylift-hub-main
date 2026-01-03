@@ -6,7 +6,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { formatNaira } from '@/types';
-import { Check, X, MessageSquare, Calendar, MapPin, User, FileText, CreditCard, Clock, ChevronRight, Package } from 'lucide-react';
+import { Check, X, MessageSquare, Calendar, MapPin, User, FileText, CreditCard, Clock, ChevronRight, Package, CheckCircle, AlertTriangle, Upload, ImageIcon, Trash2, Truck, Play, RotateCcw } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { PageTransition, StaggerContainer, StaggerItem, ScaleOnHover } from '@/components/ui/animated-container';
 import { ListItemSkeleton } from '@/components/ui/loading-skeleton';
 import { NoRequests } from '@/components/ui/empty-state';
@@ -17,6 +20,23 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { BookingProgressStepper } from '@/components/bookings/BookingProgressStepper';
+import { useBookingStatusLog } from '@/hooks/useBookingStatusLog';
+import { 
+  STATUS_COLORS, 
+  PAYMENT_STATUS_COLORS, 
+  getPaymentStatusLabel,
+  type BookingStatus 
+} from '@/lib/bookingLifecycle';
+
+interface StatusLog {
+  id: string;
+  new_status: string;
+  action_type: string;
+  performed_by_role: string;
+  notes: string | null;
+  created_at: string;
+}
 
 interface BookingWithDetails {
   id: string;
@@ -29,7 +49,7 @@ interface BookingWithDetails {
   vat_amount: number;
   deposit_amount: number | null;
   owner_payout: number | null;
-  status: string;
+  status: BookingStatus;
   site_location: string;
   site_address: string | null;
   special_requirements: string | null;
@@ -54,33 +74,51 @@ interface BookingWithDetails {
   } | null;
 }
 
-const statusColors: Record<string, string> = {
-  requested: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
-  accepted: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  pending_payment: 'bg-orange-500/10 text-orange-600 border-orange-500/20',
-  confirmed: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-  delivering: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-  on_hire: 'bg-primary/10 text-primary border-primary/20',
-  completed: 'bg-muted text-muted-foreground',
-  rejected: 'bg-destructive/10 text-destructive border-destructive/20',
-  cancelled: 'bg-muted text-muted-foreground',
-  disputed: 'bg-red-500/10 text-red-600 border-red-500/20',
-};
-
 const OwnerRequests = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { logStatusChange, fetchStatusLogs } = useBookingStatusLog();
   const [isLoading, setIsLoading] = useState(true);
   const [bookings, setBookings] = useState<BookingWithDetails[]>([]);
+  const [statusLogs, setStatusLogs] = useState<StatusLog[]>([]);
   const [activeTab, setActiveTab] = useState('requested');
   const [selectedBooking, setSelectedBooking] = useState<BookingWithDetails | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isConfirmReturnOpen, setIsConfirmReturnOpen] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isDisputeOpen, setIsDisputeOpen] = useState(false);
+  const [isDisputing, setIsDisputing] = useState(false);
+  const [disputeReason, setDisputeReason] = useState('');
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const [evidencePreviews, setEvidencePreviews] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  // New status update states
+  const [isConfirmPaymentOpen, setIsConfirmPaymentOpen] = useState(false);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const [isDispatchOpen, setIsDispatchOpen] = useState(false);
+  const [isDispatching, setIsDispatching] = useState(false);
+  const [isDeliverOpen, setIsDeliverOpen] = useState(false);
+  const [isDelivering, setIsDelivering] = useState(false);
 
   useEffect(() => {
     if (user?.id) {
       fetchBookings();
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    if (selectedBooking) {
+      loadStatusLogs(selectedBooking.id);
+    }
+  }, [selectedBooking?.id]);
+
+  const loadStatusLogs = async (bookingId: string) => {
+    const { data } = await fetchStatusLogs(bookingId);
+    if (data) {
+      setStatusLogs(data as StatusLog[]);
+    }
+  };
 
   const fetchBookings = async () => {
     if (!user?.id) return;
@@ -123,8 +161,13 @@ const OwnerRequests = () => {
     }
   };
 
-  const handleUpdateStatus = async (bookingId: string, newStatus: 'accepted' | 'rejected') => {
+  const handleUpdateStatus = async (bookingId: string, newStatus: BookingStatus, notes?: string) => {
+    const booking = bookings.find(b => b.id === bookingId);
+    if (!booking) return;
+    
     try {
+      const previousStatus = booking.status;
+      
       const { error } = await supabase
         .from('bookings')
         .update({ status: newStatus })
@@ -132,25 +175,292 @@ const OwnerRequests = () => {
 
       if (error) throw error;
 
+      // Log the status change
+      await logStatusChange({
+        bookingId,
+        previousStatus,
+        newStatus,
+        actionType: 'status_change',
+        role: 'owner',
+        notes: notes || `Status changed from ${previousStatus} to ${newStatus}`,
+      });
+
       setBookings(prev => prev.map(b => 
         b.id === bookingId ? { ...b, status: newStatus } : b
       ));
       
-      toast.success(`Booking ${newStatus === 'accepted' ? 'accepted' : 'rejected'}`);
+      if (selectedBooking?.id === bookingId) {
+        setSelectedBooking(prev => prev ? { ...prev, status: newStatus } : null);
+        loadStatusLogs(bookingId);
+      }
+      
+      toast.success(`Booking ${newStatus === 'accepted' ? 'accepted' : newStatus.replace('_', ' ')}`);
     } catch (error) {
       console.error('Error updating booking:', error);
       toast.error('Failed to update booking');
     }
   };
 
+  const handleConfirmPayment = async () => {
+    if (!selectedBooking) return;
+    
+    setIsConfirmingPayment(true);
+    try {
+      const previousStatus = selectedBooking.status;
+      const previousPaymentStatus = selectedBooking.payment_status;
+      
+      const { error } = await supabase
+        .from('bookings')
+        .update({ 
+          payment_status: 'confirmed',
+          status: 'confirmed'
+        })
+        .eq('id', selectedBooking.id);
+
+      if (error) throw error;
+
+      // Log the payment confirmation
+      await logStatusChange({
+        bookingId: selectedBooking.id,
+        previousStatus: previousPaymentStatus,
+        newStatus: 'confirmed',
+        actionType: 'payment_update',
+        role: 'owner',
+        notes: 'Payment verified and confirmed by owner',
+      });
+
+      setBookings(prev => prev.map(b => 
+        b.id === selectedBooking.id 
+          ? { ...b, payment_status: 'confirmed', status: 'confirmed' as BookingStatus } 
+          : b
+      ));
+      
+      setSelectedBooking(prev => prev ? { 
+        ...prev, 
+        payment_status: 'confirmed',
+        status: 'confirmed' as BookingStatus
+      } : null);
+      
+      toast.success('Payment confirmed. Booking is now active!');
+      setIsConfirmPaymentOpen(false);
+      loadStatusLogs(selectedBooking.id);
+    } catch (error) {
+      console.error('Error confirming payment:', error);
+      toast.error('Failed to confirm payment');
+    } finally {
+      setIsConfirmingPayment(false);
+    }
+  };
+
+  const handleDispatch = async () => {
+    if (!selectedBooking) return;
+    
+    setIsDispatching(true);
+    try {
+      await handleUpdateStatus(selectedBooking.id, 'delivering', 'Equipment dispatched for delivery');
+      setIsDispatchOpen(false);
+    } finally {
+      setIsDispatching(false);
+    }
+  };
+
+  const handleDeliver = async () => {
+    if (!selectedBooking) return;
+    
+    setIsDelivering(true);
+    try {
+      await handleUpdateStatus(selectedBooking.id, 'on_hire', 'Equipment delivered and now in use');
+      setIsDeliverOpen(false);
+    } finally {
+      setIsDelivering(false);
+    }
+  };
+
   const handleViewDetails = (booking: BookingWithDetails) => {
     setSelectedBooking(booking);
+    setStatusLogs([]);
     setIsDetailOpen(true);
+  };
+
+  const handleConfirmReturn = async () => {
+    if (!selectedBooking) return;
+    
+    setIsConfirming(true);
+    try {
+      const previousStatus = selectedBooking.status;
+      
+      const { error } = await supabase
+        .from('bookings')
+        .update({ status: 'completed' })
+        .eq('id', selectedBooking.id);
+
+      if (error) throw error;
+
+      // Log the completion
+      await logStatusChange({
+        bookingId: selectedBooking.id,
+        previousStatus,
+        newStatus: 'completed',
+        actionType: 'status_change',
+        role: 'owner',
+        notes: 'Equipment return confirmed, booking completed',
+      });
+
+      setBookings(prev => prev.map(b => 
+        b.id === selectedBooking.id ? { ...b, status: 'completed' as BookingStatus } : b
+      ));
+      
+      toast.success('Return confirmed. Booking completed!');
+      setIsConfirmReturnOpen(false);
+      setIsDetailOpen(false);
+    } catch (error) {
+      console.error('Error confirming return:', error);
+      toast.error('Failed to confirm return');
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  const handleEvidenceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length + evidenceFiles.length > 5) {
+      toast.error('Maximum 5 photos allowed');
+      return;
+    }
+    
+    const validFiles = files.filter(file => {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} is not an image`);
+        return false;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`${file.name} is too large (max 5MB)`);
+        return false;
+      }
+      return true;
+    });
+
+    setEvidenceFiles(prev => [...prev, ...validFiles]);
+    
+    validFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setEvidencePreviews(prev => [...prev, e.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeEvidence = (index: number) => {
+    setEvidenceFiles(prev => prev.filter((_, i) => i !== index));
+    setEvidencePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadEvidenceFiles = async (): Promise<string[]> => {
+    if (!user?.id || evidenceFiles.length === 0) return [];
+    
+    const uploadedUrls: string[] = [];
+    
+    for (const file of evidenceFiles) {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('dispute-evidence')
+        .upload(fileName, file);
+      
+      if (uploadError) {
+        console.error('Error uploading file:', uploadError);
+        continue;
+      }
+      
+      const { data: { publicUrl } } = supabase.storage
+        .from('dispute-evidence')
+        .getPublicUrl(fileName);
+      
+      uploadedUrls.push(publicUrl);
+    }
+    
+    return uploadedUrls;
+  };
+
+  const handleDisputeReturn = async () => {
+    if (!selectedBooking || !user?.id || !disputeReason.trim()) return;
+    
+    setIsDisputing(true);
+    try {
+      setIsUploading(true);
+      const evidenceUrls = await uploadEvidenceFiles();
+      setIsUploading(false);
+
+      const { error: disputeError } = await supabase
+        .from('disputes')
+        .insert({
+          booking_id: selectedBooking.id,
+          raised_by: user.id,
+          raised_by_role: 'owner',
+          reason: 'Equipment damage on return',
+          description: disputeReason.trim(),
+          status: 'open',
+          evidence: evidenceUrls
+        });
+
+      if (disputeError) throw disputeError;
+
+      const previousStatus = selectedBooking.status;
+      
+      const { error: bookingError } = await supabase
+        .from('bookings')
+        .update({ status: 'disputed' })
+        .eq('id', selectedBooking.id);
+
+      if (bookingError) throw bookingError;
+
+      // Log the dispute
+      await logStatusChange({
+        bookingId: selectedBooking.id,
+        previousStatus,
+        newStatus: 'disputed',
+        actionType: 'dispute',
+        role: 'owner',
+        notes: disputeReason.trim(),
+      });
+
+      setBookings(prev => prev.map(b => 
+        b.id === selectedBooking.id ? { ...b, status: 'disputed' as BookingStatus } : b
+      ));
+      
+      toast.success('Dispute raised. Our team will review and contact both parties.');
+      setIsDisputeOpen(false);
+      setIsDetailOpen(false);
+      setDisputeReason('');
+      setEvidenceFiles([]);
+      setEvidencePreviews([]);
+    } catch (error) {
+      console.error('Error raising dispute:', error);
+      toast.error('Failed to raise dispute');
+    } finally {
+      setIsDisputing(false);
+      setIsUploading(false);
+    }
+  };
+
+  // Helper functions for conditional rendering
+  const canConfirmPayment = (booking: BookingWithDetails) => {
+    return booking.status === 'pending_payment' && booking.payment_status === 'awaiting_verification';
+  };
+
+  const canDispatch = (booking: BookingWithDetails) => {
+    return booking.status === 'confirmed';
+  };
+
+  const canDeliver = (booking: BookingWithDetails) => {
+    return booking.status === 'delivering' || booking.status === 'confirmed';
   };
 
   const filteredBookings = bookings.filter(b => {
     if (activeTab === 'requested') return b.status === 'requested';
-    if (activeTab === 'active') return ['accepted', 'confirmed', 'on_hire'].includes(b.status);
+    if (activeTab === 'active') return ['accepted', 'pending_payment', 'confirmed', 'delivering', 'on_hire', 'return_due', 'returned'].includes(b.status);
     if (activeTab === 'completed') return ['completed', 'rejected', 'cancelled'].includes(b.status);
     return true;
   });
@@ -162,7 +472,7 @@ const OwnerRequests = () => {
         animate={{ opacity: 1, x: 0 }}
       >
         <h1 className="text-3xl font-bold mb-2">Booking Requests</h1>
-        <p className="text-muted-foreground">Review and respond to rental requests</p>
+        <p className="text-muted-foreground">Review and manage rental requests</p>
       </motion.div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -171,7 +481,7 @@ const OwnerRequests = () => {
             Pending ({bookings.filter(b => b.status === 'requested').length})
           </TabsTrigger>
           <TabsTrigger value="active">
-            Active ({bookings.filter(b => ['accepted', 'confirmed', 'on_hire'].includes(b.status)).length})
+            Active ({bookings.filter(b => ['accepted', 'pending_payment', 'confirmed', 'delivering', 'on_hire', 'returned'].includes(b.status)).length})
           </TabsTrigger>
           <TabsTrigger value="completed">
             Past ({bookings.filter(b => ['completed', 'rejected', 'cancelled'].includes(b.status)).length})
@@ -197,7 +507,10 @@ const OwnerRequests = () => {
                         className={`absolute left-0 top-0 bottom-0 w-1 ${
                           booking.status === 'requested' ? 'bg-amber-500' : 
                           booking.status === 'on_hire' ? 'bg-primary' : 
-                          booking.status === 'completed' ? 'bg-emerald-500' : 'bg-muted'
+                          booking.status === 'completed' ? 'bg-emerald-500' :
+                          booking.status === 'pending_payment' ? 'bg-orange-500' :
+                          booking.status === 'confirmed' ? 'bg-emerald-500' :
+                          booking.status === 'delivering' ? 'bg-purple-500' : 'bg-muted'
                         }`}
                         initial={{ scaleY: 0 }}
                         animate={{ scaleY: 1 }}
@@ -218,16 +531,21 @@ const OwnerRequests = () => {
                               </Avatar>
                             </motion.div>
                             <div>
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <h3 className="font-semibold">{booking.contractor_profile?.full_name || 'Contractor'}</h3>
                                 {booking.contractor_profile?.rating && (
                                   <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20">
                                     ⭐ {booking.contractor_profile.rating.toFixed(1)}
                                   </Badge>
                                 )}
-                                <Badge variant="outline" className={statusColors[booking.status] || 'bg-muted text-muted-foreground'}>
+                                <Badge variant="outline" className={STATUS_COLORS[booking.status] || 'bg-muted text-muted-foreground'}>
                                   {booking.status.replace('_', ' ')}
                                 </Badge>
+                                {booking.payment_status && booking.payment_status !== 'pending' && (
+                                  <Badge variant="outline" className={PAYMENT_STATUS_COLORS[booking.payment_status] || ''}>
+                                    {getPaymentStatusLabel(booking.payment_status)}
+                                  </Badge>
+                                )}
                               </div>
                               {booking.contractor_profile?.company_name && (
                                 <p className="text-sm text-muted-foreground">{booking.contractor_profile.company_name}</p>
@@ -264,18 +582,63 @@ const OwnerRequests = () => {
                                   variant="destructive" 
                                   size="sm" 
                                   className="gap-1 group"
-                                  onClick={() => handleUpdateStatus(booking.id, 'rejected')}
+                                  onClick={() => handleUpdateStatus(booking.id, 'rejected', 'Request rejected by owner')}
                                 >
                                   <X className="h-4 w-4 group-hover:rotate-90 transition-transform" /> Reject
                                 </Button>
                                 <Button 
                                   size="sm" 
                                   className="gap-1 group"
-                                  onClick={() => handleUpdateStatus(booking.id, 'accepted')}
+                                  onClick={() => handleUpdateStatus(booking.id, 'accepted', 'Request accepted by owner')}
                                 >
                                   <Check className="h-4 w-4 group-hover:scale-110 transition-transform" /> Accept
                                 </Button>
                               </>
+                            )}
+                            {canConfirmPayment(booking) && (
+                              <Button 
+                                size="sm" 
+                                className="gap-1 group bg-emerald-600 hover:bg-emerald-700"
+                                onClick={() => {
+                                  setSelectedBooking(booking);
+                                  setIsConfirmPaymentOpen(true);
+                                }}
+                              >
+                                <CreditCard className="h-4 w-4" /> Confirm Payment
+                              </Button>
+                            )}
+                            {canDispatch(booking) && (
+                              <Button 
+                                size="sm" 
+                                className="gap-1 group bg-purple-600 hover:bg-purple-700"
+                                onClick={() => {
+                                  setSelectedBooking(booking);
+                                  setIsDispatchOpen(true);
+                                }}
+                              >
+                                <Truck className="h-4 w-4" /> Dispatch
+                              </Button>
+                            )}
+                            {booking.status === 'delivering' && (
+                              <Button 
+                                size="sm" 
+                                className="gap-1 group bg-primary hover:bg-primary/90"
+                                onClick={() => {
+                                  setSelectedBooking(booking);
+                                  setIsDeliverOpen(true);
+                                }}
+                              >
+                                <Play className="h-4 w-4" /> Mark Delivered
+                              </Button>
+                            )}
+                            {booking.status === 'returned' && (
+                              <Button 
+                                size="sm" 
+                                className="gap-1 group bg-emerald-600 hover:bg-emerald-700"
+                                onClick={() => handleViewDetails(booking)}
+                              >
+                                <CheckCircle className="h-4 w-4 group-hover:scale-110 transition-transform" /> Confirm Return
+                              </Button>
                             )}
                           </div>
                         </div>
@@ -297,13 +660,22 @@ const OwnerRequests = () => {
               <DialogHeader>
                 <DialogTitle className="flex items-center justify-between">
                   <span>Booking #{selectedBooking.booking_number}</span>
-                  <Badge className={statusColors[selectedBooking.status] || 'bg-muted text-muted-foreground'}>
+                  <Badge className={STATUS_COLORS[selectedBooking.status] || 'bg-muted text-muted-foreground'}>
                     {selectedBooking.status.replace('_', ' ')}
                   </Badge>
                 </DialogTitle>
               </DialogHeader>
 
               <div className="space-y-6 mt-4">
+                {/* Booking Progress Stepper */}
+                <div className="bg-muted/30 rounded-lg p-4">
+                  <h4 className="font-medium mb-4 text-sm text-muted-foreground">Booking Progress</h4>
+                  <BookingProgressStepper 
+                    currentStatus={selectedBooking.status} 
+                    statusLogs={statusLogs}
+                  />
+                </div>
+
                 {/* Equipment Info */}
                 <div className="flex gap-4">
                   {selectedBooking.equipment?.images?.[0] && (
@@ -456,8 +828,11 @@ const OwnerRequests = () => {
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-muted-foreground">Payment Status</span>
-                      <Badge variant="outline" className="text-xs">
-                        {selectedBooking.payment_status || 'pending'}
+                      <Badge 
+                        variant="outline" 
+                        className={`text-xs ${PAYMENT_STATUS_COLORS[selectedBooking.payment_status || 'pending'] || ''}`}
+                      >
+                        {getPaymentStatusLabel(selectedBooking.payment_status)}
                       </Badge>
                     </div>
                   </div>
@@ -470,7 +845,7 @@ const OwnerRequests = () => {
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                   {selectedBooking.equipment?.id && (
                     <Button 
                       variant="outline" 
@@ -490,7 +865,7 @@ const OwnerRequests = () => {
                         variant="destructive" 
                         className="flex-1"
                         onClick={() => {
-                          handleUpdateStatus(selectedBooking.id, 'rejected');
+                          handleUpdateStatus(selectedBooking.id, 'rejected', 'Request rejected by owner');
                           setIsDetailOpen(false);
                         }}
                       >
@@ -501,7 +876,7 @@ const OwnerRequests = () => {
                         variant="default" 
                         className="flex-1"
                         onClick={() => {
-                          handleUpdateStatus(selectedBooking.id, 'accepted');
+                          handleUpdateStatus(selectedBooking.id, 'accepted', 'Request accepted by owner');
                           setIsDetailOpen(false);
                         }}
                       >
@@ -510,7 +885,57 @@ const OwnerRequests = () => {
                       </Button>
                     </>
                   )}
-                  {selectedBooking.status !== 'requested' && (
+                  {canConfirmPayment(selectedBooking) && (
+                    <Button 
+                      variant="default" 
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => setIsConfirmPaymentOpen(true)}
+                    >
+                      <CreditCard className="h-4 w-4 mr-2" />
+                      Confirm Payment
+                    </Button>
+                  )}
+                  {canDispatch(selectedBooking) && (
+                    <Button 
+                      variant="default" 
+                      className="flex-1 bg-purple-600 hover:bg-purple-700"
+                      onClick={() => setIsDispatchOpen(true)}
+                    >
+                      <Truck className="h-4 w-4 mr-2" />
+                      Mark as Dispatched
+                    </Button>
+                  )}
+                  {selectedBooking.status === 'delivering' && (
+                    <Button 
+                      variant="default" 
+                      className="flex-1"
+                      onClick={() => setIsDeliverOpen(true)}
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      Mark as Delivered
+                    </Button>
+                  )}
+                  {selectedBooking.status === 'returned' && (
+                    <>
+                      <Button 
+                        variant="destructive" 
+                        className="flex-1"
+                        onClick={() => setIsDisputeOpen(true)}
+                      >
+                        <AlertTriangle className="h-4 w-4 mr-2" />
+                        Report Issue
+                      </Button>
+                      <Button 
+                        variant="default" 
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                        onClick={() => setIsConfirmReturnOpen(true)}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Confirm Return
+                      </Button>
+                    </>
+                  )}
+                  {!['requested', 'returned', 'confirmed', 'delivering'].includes(selectedBooking.status) && !canConfirmPayment(selectedBooking) && (
                     <Button 
                       variant="default" 
                       className="flex-1"
@@ -525,6 +950,215 @@ const OwnerRequests = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Payment Dialog */}
+      <AlertDialog open={isConfirmPaymentOpen} onOpenChange={setIsConfirmPaymentOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Payment Received?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The contractor has marked this booking as paid. Please verify that you have received the payment before confirming.
+              {selectedBooking && (
+                <span className="block mt-2 font-medium text-foreground">
+                  Booking #{selectedBooking.booking_number} - {formatNaira(selectedBooking.total_amount)}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isConfirmingPayment}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmPayment}
+              disabled={isConfirmingPayment}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {isConfirmingPayment ? 'Confirming...' : 'Confirm Payment Received'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dispatch Equipment Dialog */}
+      <AlertDialog open={isDispatchOpen} onOpenChange={setIsDispatchOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark Equipment as Dispatched?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirm that you have dispatched the equipment for delivery to the contractor's site.
+              {selectedBooking && (
+                <span className="block mt-2 font-medium text-foreground">
+                  Booking #{selectedBooking.booking_number} - {selectedBooking.equipment?.title}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDispatching}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDispatch}
+              disabled={isDispatching}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              {isDispatching ? 'Updating...' : 'Mark as Dispatched'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Mark as Delivered Dialog */}
+      <AlertDialog open={isDeliverOpen} onOpenChange={setIsDeliverOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark Equipment as Delivered?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirm that the equipment has been delivered to the contractor and is now in use.
+              {selectedBooking && (
+                <span className="block mt-2 font-medium text-foreground">
+                  Booking #{selectedBooking.booking_number} - {selectedBooking.equipment?.title}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDelivering}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeliver}
+              disabled={isDelivering}
+              className="bg-primary hover:bg-primary/90"
+            >
+              {isDelivering ? 'Updating...' : 'Mark as Delivered'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirm Return Dialog */}
+      <AlertDialog open={isConfirmReturnOpen} onOpenChange={setIsConfirmReturnOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Equipment Return?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The contractor has marked this equipment as returned. Please confirm that you have received the equipment back.
+              {selectedBooking && (
+                <span className="block mt-2 font-medium text-foreground">
+                  Booking #{selectedBooking.booking_number} - {selectedBooking.equipment?.title}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isConfirming}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmReturn}
+              disabled={isConfirming}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {isConfirming ? 'Confirming...' : 'Confirm Return'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Dispute Return Dialog */}
+      <AlertDialog open={isDisputeOpen} onOpenChange={(open) => {
+        setIsDisputeOpen(open);
+        if (!open) {
+          setDisputeReason('');
+          setEvidenceFiles([]);
+          setEvidencePreviews([]);
+        }
+      }}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Report Issue with Return</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p>If the equipment was returned damaged or there are other issues, describe the problem below. Our team will review and assist in resolving the dispute.</p>
+                {selectedBooking && (
+                  <span className="block mt-2 font-medium text-foreground">
+                    Booking #{selectedBooking.booking_number} - {selectedBooking.equipment?.title}
+                  </span>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="dispute-reason" className="text-sm font-medium">
+                Describe the issue <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="dispute-reason"
+                placeholder="e.g., Equipment returned with scratches on the bucket, hydraulic leak detected..."
+                value={disputeReason}
+                onChange={(e) => setDisputeReason(e.target.value)}
+                className="mt-2"
+                rows={4}
+              />
+            </div>
+            
+            {/* Photo Evidence Upload */}
+            <div>
+              <Label className="text-sm font-medium">
+                Photo Evidence (optional, max 5 photos)
+              </Label>
+              <div className="mt-2 space-y-3">
+                {evidencePreviews.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {evidencePreviews.map((preview, index) => (
+                      <div key={index} className="relative group">
+                        <img 
+                          src={preview} 
+                          alt={`Evidence ${index + 1}`} 
+                          className="w-full h-20 object-cover rounded-lg border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeEvidence(index)}
+                          className="absolute top-1 right-1 p-1 bg-destructive text-destructive-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {evidenceFiles.length < 5 && (
+                  <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg cursor-pointer hover:border-primary hover:bg-muted/50 transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleEvidenceUpload}
+                      className="hidden"
+                    />
+                    <Upload className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">
+                      {evidenceFiles.length === 0 ? 'Upload photos' : 'Add more photos'}
+                    </span>
+                  </label>
+                )}
+                
+                <p className="text-xs text-muted-foreground">
+                  <ImageIcon className="h-3 w-3 inline mr-1" />
+                  JPG, PNG, or WEBP up to 5MB each
+                </p>
+              </div>
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDisputing || isUploading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDisputeReturn}
+              disabled={isDisputing || isUploading || !disputeReason.trim()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isUploading ? 'Uploading...' : isDisputing ? 'Submitting...' : 'Raise Dispute'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageTransition>
   );
 };

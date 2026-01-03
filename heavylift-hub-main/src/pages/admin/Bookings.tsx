@@ -29,6 +29,8 @@ const statusColors: Record<string, string> = {
   confirmed: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
   delivering: 'bg-purple-500/10 text-purple-600 border-purple-500/20',
   on_hire: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+  return_due: 'bg-rose-500/10 text-rose-600 border-rose-500/20',
+  returned: 'bg-cyan-500/10 text-cyan-600 border-cyan-500/20',
   completed: 'bg-slate-500/10 text-slate-600 border-slate-500/20',
   cancelled: 'bg-red-500/10 text-red-600 border-red-500/20',
   disputed: 'bg-red-500/10 text-red-600 border-red-500/20',
@@ -119,10 +121,11 @@ const AdminBookings = () => {
   const filteredBookings = activeTab === 'all' 
     ? bookings 
     : bookings.filter(b => {
-        if (activeTab === 'active') return ['on_hire', 'delivering', 'confirmed'].includes(b.status);
+        if (activeTab === 'active') return ['on_hire', 'return_due', 'delivering', 'confirmed'].includes(b.status);
         if (activeTab === 'pending') return ['requested', 'accepted', 'pending_payment'].includes(b.status);
-        if (activeTab === 'completed') return b.status === 'completed';
+        if (activeTab === 'completed') return ['completed', 'returned'].includes(b.status);
         if (activeTab === 'disputed') return b.status === 'disputed';
+        if (activeTab === 'return_due') return b.status === 'return_due';
         return true;
       });
 
@@ -154,16 +157,19 @@ const AdminBookings = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="all">All ({bookings.length})</TabsTrigger>
           <TabsTrigger value="active">
-            Active ({bookings.filter(b => ['on_hire', 'delivering', 'confirmed'].includes(b.status)).length})
+            Active ({bookings.filter(b => ['on_hire', 'return_due', 'delivering', 'confirmed'].includes(b.status)).length})
           </TabsTrigger>
           <TabsTrigger value="pending">
             Pending ({bookings.filter(b => ['requested', 'accepted', 'pending_payment'].includes(b.status)).length})
           </TabsTrigger>
+          <TabsTrigger value="return_due" className="text-rose-600">
+            Return Due ({bookings.filter(b => b.status === 'return_due').length})
+          </TabsTrigger>
           <TabsTrigger value="completed">
-            Completed ({bookings.filter(b => b.status === 'completed').length})
+            Completed ({bookings.filter(b => ['completed', 'returned'].includes(b.status)).length})
           </TabsTrigger>
           <TabsTrigger value="disputed">
             Disputed ({bookings.filter(b => b.status === 'disputed').length})

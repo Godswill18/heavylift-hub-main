@@ -1,5 +1,5 @@
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Environment } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { useRef, Suspense } from 'react';
 import * as THREE from 'three';
 
@@ -171,8 +171,10 @@ const ExcavatorScene = ({ className }: ExcavatorSceneProps) => {
         <Suspense fallback={<LoadingFallback />}>
           <Excavator />
           <Ground />
-          <Environment preset="city" />
         </Suspense>
+        
+        {/* Soft fill lighting instead of HDR environment */}
+        <hemisphereLight args={['#87ceeb', '#f0e68c', 0.5]} />
       </Canvas>
     </div>
   );

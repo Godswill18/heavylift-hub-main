@@ -338,9 +338,10 @@ const EquipmentSearchPage = () => {
                     <div className={viewMode === 'list' ? 'flex' : ''}>
                       <div className={`relative overflow-hidden ${viewMode === 'list' ? 'w-48 flex-shrink-0' : 'aspect-[4/3]'}`}>
                         <img
-                          src={item.images[0] || 'https://images.unsplash.com/photo-1580901368919-7738efb0f87e?w=600&h=400&fit=crop'}
+                          src={item.images && item.images[0] ? item.images[0] : '/placeholder.svg'}
                           alt={item.title}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
                         />
                         <Badge className="absolute top-3 left-3 bg-background/90 text-foreground capitalize">
                           {item.category}
