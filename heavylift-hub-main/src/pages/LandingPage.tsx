@@ -123,9 +123,9 @@ const LandingPage = () => {
         <div className="absolute inset-0 gradient-hero" />
         
         {/* 3D Scene */}
-        <div className="absolute right-0 top-0 w-full lg:w-1/2 h-full opacity-80 lg:opacity-100">
+        {/* <div className="absolute right-0 top-0 w-full lg:w-1/2 h-full opacity-80 lg:opacity-100">
           <ExcavatorScene className="w-full h-full" />
-        </div>
+        </div> */}
         
         {/* Content */}
         <div className="container relative z-10">
