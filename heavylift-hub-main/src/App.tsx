@@ -3,8 +3,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
+import SuspensionWatermark from "@/components/SuspensionWatermark";
 
 // Layouts
 import PublicLayout from "@/components/layouts/PublicLayout";
@@ -56,7 +57,7 @@ const queryClient = new QueryClient();
 
 const AuthInitializer = ({ children }: { children: React.ReactNode }) => {
   const initialize = useAuthStore((state) => state.initialize);
-  
+
   useEffect(() => {
     initialize();
   }, [initialize]);
@@ -64,14 +65,27 @@ const AuthInitializer = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthInitializer>
-          <Routes>
+const App = () => {
+  // Suspension control - set to true to show watermark, false to hide
+  const [isSuspended, setIsSuspended] = useState(true);
+
+  // Function to toggle suspension watermark
+  // You can call this function to enable/disable the watermark
+  // Example: setIsSuspended(true) to show, setIsSuspended(false) to hide
+  window.toggleSuspension = (value?: boolean) => {
+    setIsSuspended(prev => value !== undefined ? value : !prev);
+    console.log(`Website suspension watermark ${value !== undefined ? (value ? 'enabled' : 'disabled') : 'toggled'}`);
+  };
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <SuspensionWatermark isVisible={isSuspended} />
+        <BrowserRouter>
+          <AuthInitializer>
+            <Routes>
             {/* Public Routes */}
             <Route element={<PublicLayout />}>
               <Route path="/" element={<LandingPage />} />
@@ -131,6 +145,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
-);
+  );
+};
 
 export default App;
