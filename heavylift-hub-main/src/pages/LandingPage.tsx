@@ -44,57 +44,15 @@ const AnimatedCounter = ({ end, duration = 2000, suffix = '' }: { end: number; d
   return <span>{count.toLocaleString()}{suffix}</span>;
 };
 
-// Fallback featured equipment data for when database is empty
-const fallbackEquipment = [
-  {
-    id: 'fallback-1',
-    title: 'CAT 320D Hydraulic Excavator',
-    category: 'excavator',
-    location: 'Lekki',
-    daily_rate: 185000,
-    rating: 4.8,
-    total_reviews: 23,
-    images: ['https://images.unsplash.com/photo-1580901368919-7738efb0f87e?w=600&h=400&fit=crop'],
-  },
-  {
-    id: 'fallback-2',
-    title: 'JCB 3CX Backhoe Loader',
-    category: 'backhoe',
-    location: 'Ikeja',
-    daily_rate: 95000,
-    rating: 4.6,
-    total_reviews: 18,
-    images: ['https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&h=400&fit=crop'],
-  },
-  {
-    id: 'fallback-3',
-    title: 'Komatsu D65 Bulldozer',
-    category: 'bulldozer',
-    location: 'Victoria Island',
-    daily_rate: 250000,
-    rating: 4.9,
-    total_reviews: 31,
-    images: ['https://images.unsplash.com/photo-1581094288338-2314dddb7ece?w=600&h=400&fit=crop'],
-  },
-  {
-    id: 'fallback-4',
-    title: 'Grove RT890E Mobile Crane',
-    category: 'crane',
-    location: 'Ajah',
-    daily_rate: 350000,
-    rating: 4.7,
-    total_reviews: 15,
-    images: ['https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&h=400&fit=crop'],
-  },
-];
-
 const LandingPage = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [featuredEquipment, setFeaturedEquipment] = useState<any[]>(fallbackEquipment);
+  const [featuredEquipment, setFeaturedEquipment] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadFeaturedEquipment = async () => {
+      setIsLoading(true);
       const { data, error } = await supabase
         .from('equipment')
         .select('id, title, category, location, daily_rate, rating, total_reviews, images')
@@ -102,9 +60,13 @@ const LandingPage = () => {
         .order('rating', { ascending: false })
         .limit(4);
 
-      if (data && data.length > 0) {
-        setFeaturedEquipment(data);
+      if (error) {
+        console.error('Error fetching equipment:', error);
+        setFeaturedEquipment([]);
+      } else {
+        setFeaturedEquipment(data || []);
       }
+      setIsLoading(false);
     };
 
     loadFeaturedEquipment();
@@ -234,10 +196,36 @@ const LandingPage = () => {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {featuredEquipment.map((item, index) => {
-              const isFallback = item.id.startsWith('fallback-');
-              return (
+          {isLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[1, 2, 3, 4].map((n) => (
+                <Card key={n} className="overflow-hidden">
+                  <div className="aspect-[4/3] bg-muted animate-pulse" />
+                  <CardContent className="p-4 space-y-3">
+                    <div className="h-5 bg-muted rounded animate-pulse" />
+                    <div className="h-4 bg-muted rounded w-2/3 animate-pulse" />
+                    <div className="h-6 bg-muted rounded w-1/2 animate-pulse" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : featuredEquipment.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="mx-auto w-20 h-20 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Truck className="h-10 w-10 text-muted-foreground" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">No Equipment Listed Yet</h3>
+              <p className="text-muted-foreground mb-6">
+                Be the first to list your equipment and start earning!
+              </p>
+              <Button onClick={() => navigate('/auth?mode=signup&role=owner')} className="gap-2">
+                List Your Equipment
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {featuredEquipment.map((item, index) => (
                 <motion.div
                   key={item.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -245,9 +233,9 @@ const LandingPage = () => {
                   transition={{ duration: 0.5, delay: index * 0.1 }}
                   viewport={{ once: true }}
                 >
-                  <Card 
-                    className="group overflow-hidden hover-lift cursor-pointer" 
-                    onClick={() => isFallback ? navigate('/equipment') : navigate(`/equipment/${item.id}`)}
+                  <Card
+                    className="group overflow-hidden hover-lift cursor-pointer"
+                    onClick={() => navigate(`/equipment/${item.id}`)}
                   >
                     <div className="relative aspect-[4/3] overflow-hidden">
                       <img
@@ -279,9 +267,9 @@ const LandingPage = () => {
                     </CardContent>
                   </Card>
                 </motion.div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
