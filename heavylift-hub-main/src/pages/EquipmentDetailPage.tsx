@@ -520,7 +520,7 @@ const EquipmentDetailPage = () => {
                     <span>{formatNaira(costs.rentalAmount)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span>Platform fee (10%)</span>
+                    <span>Delivery fee</span>
                     <span>{formatNaira(costs.platformFee)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
