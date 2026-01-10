@@ -245,7 +245,7 @@ export const formatNaira = (amount: number): string => {
 // Calculate booking costs
 export const calculateBookingCosts = (dailyRate: number, days: number, depositAmount: number = 0) => {
   const rentalAmount = dailyRate * days;
-  const platformFee = rentalAmount * 0.10; // 10% platform fee
+  const platformFee = rentalAmount * 0.05; // 5% platform fee
   const vatAmount = (rentalAmount + platformFee) * 0.075; // 7.5% VAT
   const totalAmount = rentalAmount + platformFee + vatAmount + depositAmount;
   const ownerPayout = rentalAmount - (rentalAmount * 0.05); // Owner gets 95%
