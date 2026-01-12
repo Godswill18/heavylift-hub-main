@@ -67,7 +67,7 @@ const AuthInitializer = ({ children }: { children: React.ReactNode }) => {
 
 const App = () => {
   // Suspension control - set to true to show watermark, false to hide
-  const [isSuspended, setIsSuspended] = useState(true);
+  const [isSuspended, setIsSuspended] = useState(false);
 
   // Function to toggle suspension watermark
   // You can call this function to enable/disable the watermark
